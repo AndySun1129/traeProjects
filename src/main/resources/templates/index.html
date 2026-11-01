@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JCL 数据流可视化工具</title>
+    <!-- 已本地化到 /vendor：以下 jsDelivr 引用保留注释，勿删
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/vis-network@10.1.2/standalone/umd/vis-network.min.js">
+    <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js">
+    <link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.css">
+    -->
+    <link rel="stylesheet" href="/vendor/codemirror.css">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app" id="app">
+    <!-- 左侧编辑面板 -->
+    <div class="left-panel" id="leftPanel">
+        <div class="panel-header">
+            <span class="title" title="第 72 列后为序号/注释区（灰色）">JCL 源码编辑器</span>
+            <div class="toolbar">
+                <button id="btnSample">加载示例</button>
+                <button id="btnClear">一键清空</button>
+                <button id="btnUpload">上传文件</button>
+                <button id="btnParse" class="primary">解析生成</button>
+            </div>
+        </div>
+        <div class="editor-wrap" id="editorWrap">
+            <textarea id="editor" spellcheck="false" placeholder="// 在此输入或粘贴 JCL 源码..."></textarea>
+            <div class="drop-overlay">松开以加载 .jcl 文件</div>
+            <input type="file" id="fileInput" accept=".jcl,.txt" style="display:none;">
+        </div>
+        <div class="warn-bar" id="warnBar"></div>
+        <div class="error-bar" id="errorBar"></div>
+    </div>
+
+    <button class="collapse-btn" id="collapseBtn"><span>◀</span></button>
+
+    <!-- 右侧流程图区域 -->
+    <div class="right-area">
+        <div class="info-bar" id="infoBar">
+            <div class="default-info">
+                <span class="job-select-wrap" id="jobSelectWrap" style="display:none;">
+                    <label for="jobSelect">JOB</label>
+                    <select id="jobSelect"></select>
+                </span>
+                <span class="job-name" id="jobName">（未解析）</span>
+                <span class="stat">账户：<b id="jobAccount">—</b></span>
+                <span class="stat">程序员：<b id="jobProgrammer">—</b></span>
+                <span class="stat">CLASS：<b id="jobClass">—</b></span>
+                <span class="stat">MSGCLASS：<b id="jobMsgClass">—</b></span>
+                <span class="stat">STEP 数：<b id="stepCount">0</b></span>
+                <span class="stat">DSN 数：<b id="dsnCount">0</b></span>
+                <span class="stat" style="color:#9ca3af;">→ 按 STEP 执行顺序从左到右布局</span>
+            </div>
+            <div class="dsn-detail">
+                <button class="back-btn" id="backBtn">← 返回</button>
+                <span class="info-title">数据集信息</span>
+                <span class="info-item"><span class="info-label">物理名：</span><span class="info-value" id="dsnPhysical">—</span></span>
+                <span class="info-item"><span class="info-label">DCB：</span><span class="info-value" id="dsnDcb">—</span></span>
+                <span class="info-item"><span class="info-label">写入步骤：</span><span class="info-value" id="dsnWriters">—</span></span>
+                <span class="info-item"><span class="info-label">读取步骤：</span><span class="info-value" id="dsnReaders">—</span></span>
+            </div>
+        </div>
+
+        <div class="graph-toolbar">
+            <input type="text" class="search" id="searchInput" placeholder="搜索 DSN...">
+            <button id="btnFit">收起侧栏</button>
+            <button id="btnResetView">重置视图</button>
+            <button id="btnExportPng">导出 PNG</button>
+        </div>
+
+        <div id="mynetwork"></div>
+
+        <div class="legend">
+            <div class="lg-title">图例</div>
+            <div class="lg-row"><span class="lg-swatch" style="background:#4A90D9;border-color:#2F6BA8;"></span>STEP 节点</div>
+            <div class="lg-row"><span class="lg-dot" style="background:#F5A623;border-color:#B87A0E;"></span>DSN 节点</div>
+            <div class="lg-row"><span class="lg-ring"></span>临时数据集（&&）</div>
+            <div class="lg-row"><span class="lg-diamond" style="background:#e5e7eb;border-color:#6b7280;"></span>NULLFILE（丢弃输出）</div>
+            <div class="lg-row"><span class="lg-swatch" style="background:#E8590C;border-color:#7a1f00;"></span>高亮（选中 DSN 及关联）</div>
+            <div class="lg-row"><span style="display:inline-block;width:18px;border-top:2px solid #A0A0A0;"></span>数据流（标签为 DD 名）</div>
+        </div>
+    </div>
+</div>
+
+<!-- 渲染等待遮罩 -->
+<div class="loading-overlay show" id="loadingOverlay">
+    <div class="loading-box">
+        <div class="spinner"></div>
+        <div id="loadingText">正在加载页面…</div>
+    </div>
+</div>
+
+<!-- STEP 详情 Modal -->
+<div class="modal" id="stepModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title" id="modalTitle"></div>
+            <button class="modal-close" id="modalClose">&times;</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
+</div>
+
+<!-- 已本地化到 /vendor：以下 jsDelivr 引用保留注释，勿删
+<script src="https://cdn.jsdelivr.net/npm/vis-network@10.1.2/standalone/umd/vis-network.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js"></script>
+-->
+<script src="/vendor/vis-network.min.js"></script>
+<script src="/vendor/codemirror.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

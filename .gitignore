@@ -1,0 +1,10 @@
+# 工作约定文件一律不进仓库（见根 AGENTS.md「全局硬性约定」）
+AGENTS.md
+
+target/
+tmp-test/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
